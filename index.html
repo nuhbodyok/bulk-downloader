@@ -1,0 +1,1442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bulk URL Downloader</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#5D5CDE',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .loader {
+            border-top-color: #5D5CDE;
+            animation: spinner 0.6s linear infinite;
+        }
+        @keyframes spinner {
+            to {transform: rotate(360deg);}
+        }
+        /* Handle scrollbars */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.1);
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(0, 0, 0, 0.2);
+        }
+        .dark .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .dark .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        /* Toast notifications */
+        .toast {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 9999;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+            transform: translateX(150%);
+            opacity: 0;
+        }
+        .toast.show {
+            transform: translateX(0);
+            opacity: 1;
+        }
+        /* Preview hover effect */
+        .preview-container {
+            position: relative;
+        }
+        .media-preview {
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #fff;
+            border: 1px solid rgba(0,0,0,0.1);
+            border-radius: 4px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            padding: 4px;
+            max-width: 300px;
+            max-height: 200px;
+            z-index: 10;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+        }
+        .dark .media-preview {
+            background-color: #1a1a1a;
+            border-color: rgba(255,255,255,0.1);
+        }
+        .preview-trigger:hover + .media-preview,
+        .media-preview:hover {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        /* Drop zone highlight */
+        .drag-active {
+            background-color: rgba(93, 92, 222, 0.1);
+        }
+        /* File type filters */
+        @media (max-width: 640px) {
+            .filter-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body class="bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200 min-h-screen">
+    <!-- Toast container -->
+    <div id="toastContainer"></div>
+    
+    <div class="container mx-auto p-4 max-w-4xl">
+        <header class="text-center mb-6">
+            <h1 class="text-3xl font-bold text-primary mb-2">Bulk URL Downloader</h1>
+            <p class="text-gray-600 dark:text-gray-400">Download multiple files at once from your list of URLs</p>
+        </header>
+
+        <div class="bg-gray-100 dark:bg-gray-800 rounded-lg p-6 shadow-md mb-6">
+            <ul class="flex flex-wrap border-b border-gray-200 dark:border-gray-700 mb-4" role="tablist">
+                <li class="mr-2">
+                    <button id="tab-text" class="tab-btn inline-block py-2 px-4 text-primary active border-b-2 border-primary font-medium" role="tab" aria-selected="true" aria-controls="panel-text">Enter URLs</button>
+                </li>
+                <li class="mr-2">
+                    <button id="tab-file" class="tab-btn inline-block py-2 px-4 text-gray-500 dark:text-gray-400 hover:text-primary dark:hover:text-primary font-medium" role="tab" aria-selected="false" aria-controls="panel-file">Upload File</button>
+                </li>
+                <li class="mr-2">
+                    <button id="tab-prefix" class="tab-btn inline-block py-2 px-4 text-gray-500 dark:text-gray-400 hover:text-primary dark:hover:text-primary font-medium" role="tab" aria-selected="false" aria-controls="panel-prefix">Base URL + Paths</button>
+                </li>
+            </ul>
+            
+            <!-- Enter URLs Tab -->
+            <div id="panel-text" class="tab-panel" role="tabpanel" aria-labelledby="tab-text">
+                <label for="urlInput" class="block text-sm font-medium mb-2">Enter URLs (one per line)</label>
+                <textarea 
+                    id="urlInput" 
+                    class="w-full h-40 p-3 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-700 text-base custom-scrollbar focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" 
+                    placeholder="https://example.com/file1.pdf&#10;https://example.com/image.jpg&#10;https://example.com/audio.mp3"
+                ></textarea>
+            </div>
+            
+            <!-- Upload File Tab -->
+            <div id="panel-file" class="tab-panel hidden" role="tabpanel" aria-labelledby="tab-file">
+                <label for="fileInput" class="block text-sm font-medium mb-2">Upload a text file containing URLs (one per line)</label>
+                <div class="flex flex-col gap-2">
+                    <div id="dropZone" class="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-md p-6 flex flex-col items-center justify-center text-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-gray-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">Drag and drop a text file here or click to browse</p>
+                        <input type="file" id="fileInput" accept=".txt,.csv,.md,.json" class="hidden" />
+                        <button 
+                            id="browseFilesBtn" 
+                            class="px-4 py-2 bg-primary text-white rounded-md hover:bg-opacity-90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50 transition-colors"
+                        >
+                            Browse Files
+                        </button>
+                    </div>
+                    <div id="fileInfo" class="hidden text-sm bg-white dark:bg-gray-700 p-3 rounded-md border border-gray-300 dark:border-gray-600"></div>
+                </div>
+            </div>
+            
+            <!-- Base URL + Paths Tab -->
+            <div id="panel-prefix" class="tab-panel hidden" role="tabpanel" aria-labelledby="tab-prefix">
+                <div class="flex flex-col gap-3">
+                    <div>
+                        <label for="baseUrlInput" class="block text-sm font-medium mb-2">Base URL</label>
+                        <input 
+                            type="text" 
+                            id="baseUrlInput" 
+                            class="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-700 text-base focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" 
+                            placeholder="https://example.com"
+                        />
+                    </div>
+                    <div>
+                        <label for="pathsInput" class="block text-sm font-medium mb-2">Enter Paths (one per line)</label>
+                        <textarea 
+                            id="pathsInput" 
+                            class="w-full h-32 p-3 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-700 text-base custom-scrollbar focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" 
+                            placeholder="/images/file1.jpg&#10;/documents/doc1.pdf&#10;/media/video.mp4"
+                        ></textarea>
+                    </div>
+                    <div>
+                        <button 
+                            id="combineBtn" 
+                            class="px-4 py-2 bg-primary text-white rounded-md hover:bg-opacity-90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50 transition-colors"
+                        >
+                            Combine URLs
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex flex-wrap gap-3 mt-6 items-center">
+                <button 
+                    id="processBtn" 
+                    class="px-4 py-2 bg-primary text-white rounded-md hover:bg-opacity-90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50 transition-colors"
+                >
+                    Process URLs
+                </button>
+                <button 
+                    id="clearBtn" 
+                    class="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-opacity-90 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50 transition-colors"
+                >
+                    Clear All
+                </button>
+                
+                <div id="downloadControls" class="hidden ml-auto flex flex-wrap gap-2 items-center">
+                    <label for="downloadDelay" class="text-sm whitespace-nowrap">Delay (ms):</label>
+                    <input 
+                        type="number" 
+                        id="downloadDelay" 
+                        class="w-20 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-700 text-base"
+                        value="500"
+                        min="100"
+                        max="5000"
+                        step="100"
+                    >
+                    <label for="concurrentLimit" class="text-sm whitespace-nowrap ml-2">Concurrent:</label>
+                    <input 
+                        type="number" 
+                        id="concurrentLimit" 
+                        class="w-16 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-700 text-base"
+                        value="3"
+                        min="1"
+                        max="10"
+                        step="1"
+                    >
+                    <button 
+                        id="downloadAllBtn" 
+                        class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-600 focus:ring-opacity-50 transition-colors"
+                        disabled
+                    >
+                        Download All
+                    </button>
+                </div>
+            </div>
+            
+            <!-- URL Filter Options -->
+            <div class="mt-4 grid md:grid-cols-2 gap-x-6 gap-y-2">
+                <div class="flex items-center">
+                    <input type="checkbox" id="fixFilenames" class="rounded border-gray-300 text-primary focus:ring-primary" checked>
+                    <label for="fixFilenames" class="ml-2 text-sm text-gray-600 dark:text-gray-400">
+                        Clean up filenames (remove special characters)
+                    </label>
+                </div>
+                
+                <div class="flex items-center">
+                    <input type="checkbox" id="detectURLs" class="rounded border-gray-300 text-primary focus:ring-primary" checked>
+                    <label for="detectURLs" class="ml-2 text-sm text-gray-600 dark:text-gray-400">
+                        Auto-detect URLs in pasted text
+                    </label>
+                </div>
+                
+                <div class="flex items-center">
+                    <input type="checkbox" id="validateContent" class="rounded border-gray-300 text-primary focus:ring-primary" checked>
+                    <label for="validateContent" class="ml-2 text-sm text-gray-600 dark:text-gray-400">
+                        Validate URL accessibility (HEAD request)
+                    </label>
+                </div>
+                
+                <div class="flex items-center">
+                    <input type="checkbox" id="previewMedia" class="rounded border-gray-300 text-primary focus:ring-primary" checked>
+                    <label for="previewMedia" class="ml-2 text-sm text-gray-600 dark:text-gray-400">
+                        Show media previews where possible
+                    </label>
+                </div>
+            </div>
+            
+            <!-- File Type Filter -->
+            <div class="mt-4">
+                <details class="bg-white dark:bg-gray-700 rounded-md border border-gray-200 dark:border-gray-600">
+                    <summary class="p-3 cursor-pointer text-sm font-medium">File Type Filters</summary>
+                    <div class="p-3 pt-0 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                        <div class="flex items-center">
+                            <input type="checkbox" id="type-all" class="type-filter rounded border-gray-300 text-primary focus:ring-primary" checked data-type="all">
+                            <label for="type-all" class="ml-2 text-sm text-gray-600 dark:text-gray-400">All Types</label>
+                        </div>
+                        <div class="flex items-center">
+                            <input type="checkbox" id="type-image" class="type-filter rounded border-gray-300 text-primary focus:ring-primary" data-type="image">
+                            <label for="type-image" class="ml-2 text-sm text-gray-600 dark:text-gray-400">Images</label>
+                        </div>
+                        <div class="flex items-center">
+                            <input type="checkbox" id="type-video" class="type-filter rounded border-gray-300 text-primary focus:ring-primary" data-type="video">
+                            <label for="type-video" class="ml-2 text-sm text-gray-600 dark:text-gray-400">Videos</label>
+                        </div>
+                        <div class="flex items-center">
+                            <input type="checkbox" id="type-audio" class="type-filter rounded border-gray-300 text-primary focus:ring-primary" data-type="audio">
+                            <label for="type-audio" class="ml-2 text-sm text-gray-600 dark:text-gray-400">Audio</label>
+                        </div>
+                        <div class="flex items-center">
+                            <input type="checkbox" id="type-pdf" class="type-filter rounded border-gray-300 text-primary focus:ring-primary" data-type="pdf">
+                            <label for="type-pdf" class="ml-2 text-sm text-gray-600 dark:text-gray-400">PDF</label>
+                        </div>
+                        <div class="flex items-center">
+                            <input type="checkbox" id="type-doc" class="type-filter rounded border-gray-300 text-primary focus:ring-primary" data-type="doc">
+                            <label for="type-doc" class="ml-2 text-sm text-gray-600 dark:text-gray-400">Documents</label>
+                        </div>
+                        <div class="flex items-center">
+                            <input type="checkbox" id="type-data" class="type-filter rounded border-gray-300 text-primary focus:ring-primary" data-type="data">
+                            <label for="type-data" class="ml-2 text-sm text-gray-600 dark:text-gray-400">Data Files</label>
+                        </div>
+                        <div class="flex items-center">
+                            <input type="checkbox" id="type-archive" class="type-filter rounded border-gray-300 text-primary focus:ring-primary" data-type="archive">
+                            <label for="type-archive" class="ml-2 text-sm text-gray-600 dark:text-gray-400">Archives</label>
+                        </div>
+                    </div>
+                </details>
+            </div>
+        </div>
+
+        <div id="statusContainer" class="mb-6 hidden">
+            <h2 class="text-xl font-semibold mb-3">Processing Status</h2>
+            <div class="bg-gray-100 dark:bg-gray-800 rounded-lg p-4 shadow-md">
+                <div class="flex flex-wrap justify-between mb-2 gap-2">
+                    <div>
+                        <span id="processedCount">0</span>/<span id="totalCount">0</span> URLs processed
+                    </div>
+                    <div>
+                        <span id="successCount" class="text-green-600 dark:text-green-400">0</span> success, 
+                        <span id="errorCount" class="text-red-600 dark:text-red-400">0</span> error,
+                        <span id="pendingCount" class="text-blue-600 dark:text-blue-400">0</span> pending
+                    </div>
+                </div>
+                <div class="w-full bg-gray-300 dark:bg-gray-700 rounded-full h-2.5">
+                    <div id="progressBar" class="bg-primary h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="resultsContainer" class="hidden">
+            <div class="flex justify-between items-center mb-3">
+                <h2 class="text-xl font-semibold">Results</h2>
+                <div class="flex gap-2">
+                    <button id="copyAllURLs" class="text-sm text-primary hover:underline">Copy All URLs</button>
+                    <button id="retryFailedBtn" class="text-sm text-primary hover:underline hidden">Retry Failed</button>
+                </div>
+            </div>
+            <div id="resultsList" class="grid grid-cols-1 gap-2"></div>
+        </div>
+        
+        <!-- Hidden download frame -->
+        <iframe id="downloadFrame" style="display:none"></iframe>
+    </div>
+
+    <script>
+        // Dark mode detection
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.classList.add('dark');
+        }
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
+            if (event.matches) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        });
+
+        // Elements
+        const urlInput = document.getElementById('urlInput');
+        const processBtn = document.getElementById('processBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const downloadAllBtn = document.getElementById('downloadAllBtn');
+        const downloadDelay = document.getElementById('downloadDelay');
+        const concurrentLimit = document.getElementById('concurrentLimit');
+        const fixFilenames = document.getElementById('fixFilenames');
+        const detectURLs = document.getElementById('detectURLs');
+        const validateContent = document.getElementById('validateContent');
+        const previewMedia = document.getElementById('previewMedia');
+        const downloadControls = document.getElementById('downloadControls');
+        const statusContainer = document.getElementById('statusContainer');
+        const resultsContainer = document.getElementById('resultsContainer');
+        const resultsList = document.getElementById('resultsList');
+        const processedCount = document.getElementById('processedCount');
+        const totalCount = document.getElementById('totalCount');
+        const successCount = document.getElementById('successCount');
+        const errorCount = document.getElementById('errorCount');
+        const pendingCount = document.getElementById('pendingCount');
+        const progressBar = document.getElementById('progressBar');
+        const downloadFrame = document.getElementById('downloadFrame');
+        const copyAllURLs = document.getElementById('copyAllURLs');
+        const retryFailedBtn = document.getElementById('retryFailedBtn');
+        const toastContainer = document.getElementById('toastContainer');
+        const fileInput = document.getElementById('fileInput');
+        const browseFilesBtn = document.getElementById('browseFilesBtn');
+        const fileInfo = document.getElementById('fileInfo');
+        const dropZone = document.getElementById('dropZone');
+        const baseUrlInput = document.getElementById('baseUrlInput');
+        const pathsInput = document.getElementById('pathsInput');
+        const combineBtn = document.getElementById('combineBtn');
+        const typeFilters = document.querySelectorAll('.type-filter');
+
+        // Tabs functionality
+        const tabButtons = document.querySelectorAll('.tab-btn');
+        const tabPanels = document.querySelectorAll('.tab-panel');
+
+        tabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                // Remove active state from all tabs
+                tabButtons.forEach(btn => {
+                    btn.classList.remove('text-primary', 'border-b-2', 'border-primary');
+                    btn.classList.add('text-gray-500', 'dark:text-gray-400');
+                    btn.setAttribute('aria-selected', 'false');
+                });
+                
+                // Add active state to clicked tab
+                button.classList.remove('text-gray-500', 'dark:text-gray-400');
+                button.classList.add('text-primary', 'border-b-2', 'border-primary');
+                button.setAttribute('aria-selected', 'true');
+                
+                // Hide all panels
+                tabPanels.forEach(panel => panel.classList.add('hidden'));
+                
+                // Show the selected panel
+                const panelId = button.getAttribute('aria-controls');
+                document.getElementById(panelId).classList.remove('hidden');
+            });
+        });
+
+        // Stats and validated URLs
+        let stats = {
+            total: 0,
+            processed: 0,
+            success: 0,
+            error: 0,
+            pending: 0
+        };
+        
+        let validUrls = [];
+        let failedUrls = [];
+        let downloadQueue = [];
+        let concurrentDownloads = 0;
+        let maxConcurrentDownloads = parseInt(concurrentLimit.value) || 3;
+        let isDownloading = false;
+        let urlData = []; // Store all URL data with metadata
+        let activeTypeFilters = ['all'];
+
+        // File type mappings
+        const fileTypeMappings = {
+            image: ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg', '.tiff', '.ico'],
+            video: ['.mp4', '.webm', '.ogg', '.mov', '.avi', '.wmv', '.flv', '.mkv', '.m4v'],
+            audio: ['.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac'],
+            pdf: ['.pdf'],
+            doc: ['.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx', '.odt', '.ods', '.odp', '.txt', '.rtf'],
+            data: ['.csv', '.json', '.xml', '.yaml', '.yml', '.sql', '.db'],
+            archive: ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz']
+        };
+
+        // MIME type to file type mappings
+        const mimeTypeMappings = {
+            'image/': 'image',
+            'video/': 'video',
+            'audio/': 'audio',
+            'application/pdf': 'pdf',
+            'application/msword': 'doc',
+            'application/vnd.openxmlformats-officedocument': 'doc',
+            'application/vnd.ms': 'doc',
+            'text/': 'doc',
+            'application/json': 'data',
+            'application/xml': 'data',
+            'application/zip': 'archive',
+            'application/x-rar': 'archive',
+            'application/x-7z': 'archive',
+            'application/x-tar': 'archive',
+            'application/gzip': 'archive'
+        };
+
+        // Detect file type based on extension or MIME type
+        function detectFileType(url, contentType = '') {
+            // First check by file extension
+            const extension = url.toLowerCase().split('?')[0].split('#')[0].split('.').pop();
+            const fullExtension = `.${extension}`;
+            
+            for (const [type, extensions] of Object.entries(fileTypeMappings)) {
+                if (extensions.includes(fullExtension)) {
+                    return type;
+                }
+            }
+            
+            // If no match by extension, try MIME type
+            if (contentType) {
+                for (const [mimePrefix, type] of Object.entries(mimeTypeMappings)) {
+                    if (contentType.startsWith(mimePrefix)) {
+                        return type;
+                    }
+                }
+            }
+            
+            // Default fallback
+            return 'unknown';
+        }
+
+        // Toast notification
+        function showToast(message, type = 'info') {
+            // Create toast element
+            const toast = document.createElement('div');
+            toast.className = `toast p-3 rounded shadow-lg mb-2 text-white ${
+                type === 'success' ? 'bg-green-600' : 
+                type === 'error' ? 'bg-red-600' : 
+                type === 'warning' ? 'bg-yellow-500' : 'bg-blue-600'
+            }`;
+            toast.textContent = message;
+            
+            // Add to container
+            toastContainer.appendChild(toast);
+            
+            // Trigger animation
+            setTimeout(() => toast.classList.add('show'), 10);
+            
+            // Auto-remove after 3 seconds
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toastContainer.removeChild(toast), 300);
+            }, 3000);
+        }
+        
+        // Auto-detect URLs in pasted text
+        urlInput.addEventListener('paste', (e) => {
+            if (!detectURLs.checked) return;
+            
+            // Get pasted text
+            const pastedText = e.clipboardData.getData('text');
+            
+            // Don't process if it's already a list of URLs (one per line)
+            if (pastedText.trim().split('\n').every(line => isValidUrl(line.trim()))) {
+                return;
+            }
+            
+            // Extract URLs from text
+            const urls = extractUrls(pastedText);
+            
+            if (urls.length > 0) {
+                e.preventDefault();
+                
+                // If the textarea already has content, add a newline
+                if (urlInput.value.trim() !== '') {
+                    urlInput.value += '\n';
+                }
+                
+                // Add the extracted URLs
+                urlInput.value += urls.join('\n');
+                showToast(`Extracted ${urls.length} URL${urls.length === 1 ? '' : 's'}`, 'success');
+            }
+        });
+        
+        // Extract URLs from text
+        function extractUrls(text) {
+            const urlRegex = /(https?:\/\/[^\s()<>]+(?:\([\w\d]+\)|(?:[^,.;'"\s()<>]|(?:&(?:amp;)?(?:lt;|gt;|quot;|apos;|#\d+;))*[\w]?\])*))/gi;
+            const matches = text.match(urlRegex) || [];
+            return [...new Set(matches)]; // Remove duplicates
+        }
+
+        // File input handling
+        browseFilesBtn.addEventListener('click', () => {
+            fileInput.click();
+        });
+        
+        fileInput.addEventListener('change', handleFileSelect);
+        
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            processFile(file);
+        }
+        
+        // Drag and drop handling
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+        
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, highlight, false);
+        });
+        
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, unhighlight, false);
+        });
+        
+        function highlight() {
+            dropZone.classList.add('drag-active');
+        }
+        
+        function unhighlight() {
+            dropZone.classList.remove('drag-active');
+        }
+        
+        dropZone.addEventListener('drop', handleDrop, false);
+        
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const file = dt.files[0];
+            
+            if (file) {
+                processFile(file);
+            }
+        }
+        
+        // Process uploaded file
+        function processFile(file) {
+            if (file.size > 10 * 1024 * 1024) { // 10MB limit
+                showToast('File is too large. Maximum size is 10MB', 'error');
+                return;
+            }
+            
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                const content = e.target.result;
+                // Display file info
+                fileInfo.innerHTML = `
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <span class="font-medium">${file.name}</span> 
+                            <span class="text-gray-500 dark:text-gray-400">(${formatFileSize(file.size)})</span>
+                        </div>
+                        <button id="clearFileBtn" class="text-gray-500 hover:text-red-500 dark:text-gray-400 dark:hover:text-red-400">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                    </div>
+                `;
+                fileInfo.classList.remove('hidden');
+                
+                // Extract URLs from file content
+                const urls = extractUrls(content);
+                
+                // Also look for one URL per line
+                const lines = content.split('\n')
+                    .map(line => line.trim())
+                    .filter(line => line !== '');
+                    
+                const validLines = lines.filter(line => isValidUrl(line));
+                
+                // If we found more valid URLs as separate lines than with regex, use those
+                if (validLines.length > urls.length) {
+                    urlInput.value = validLines.join('\n');
+                    showToast(`Found ${validLines.length} URLs in the file`, 'success');
+                } else if (urls.length > 0) {
+                    urlInput.value = urls.join('\n');
+                    showToast(`Extracted ${urls.length} URLs from the file`, 'success');
+                } else {
+                    showToast('No valid URLs found in the file', 'warning');
+                }
+                
+                // Change to URLs tab to show the extracted URLs
+                document.getElementById('tab-text').click();
+                
+                // Add clear button functionality
+                document.getElementById('clearFileBtn').addEventListener('click', () => {
+                    fileInfo.classList.add('hidden');
+                    fileInfo.innerHTML = '';
+                    fileInput.value = '';
+                });
+            };
+            
+            reader.onerror = function() {
+                showToast('Error reading file', 'error');
+            };
+            
+            reader.readAsText(file);
+        }
+        
+        // Format file size
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        // Combine base URL with paths
+        combineBtn.addEventListener('click', () => {
+            const baseUrl = baseUrlInput.value.trim();
+            const paths = pathsInput.value.trim().split('\n').filter(path => path.trim() !== '');
+            
+            if (!baseUrl) {
+                showToast('Please enter a base URL', 'error');
+                return;
+            }
+            
+            if (paths.length === 0) {
+                showToast('Please enter at least one path', 'error');
+                return;
+            }
+            
+            try {
+                // Validate base URL format
+                new URL(baseUrl);
+                
+                // Remove trailing slash from base URL
+                const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+                
+                // Combine base URL with paths
+                const combinedUrls = paths.map(path => {
+                    // Add leading slash if missing
+                    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+                    return `${normalizedBaseUrl}${normalizedPath}`;
+                });
+                
+                // Update URL input
+                urlInput.value = combinedUrls.join('\n');
+                
+                // Switch to URL input tab
+                document.getElementById('tab-text').click();
+                
+                showToast(`Created ${combinedUrls.length} combined URLs`, 'success');
+            } catch (error) {
+                showToast('Invalid base URL format', 'error');
+            }
+        });
+        
+        // Handle file type filters
+        typeFilters.forEach(filter => {
+            filter.addEventListener('change', handleFilterChange);
+        });
+        
+        function handleFilterChange(e) {
+            const filterType = e.target.dataset.type;
+            const isChecked = e.target.checked;
+            
+            if (filterType === 'all') {
+                // When "All Types" is checked, uncheck others
+                if (isChecked) {
+                    activeTypeFilters = ['all'];
+                    typeFilters.forEach(filter => {
+                        if (filter.dataset.type !== 'all') {
+                            filter.checked = false;
+                        }
+                    });
+                } else {
+                    // Don't allow unchecking "All Types" if it's the only one checked
+                    if (activeTypeFilters.length === 1 && activeTypeFilters[0] === 'all') {
+                        e.target.checked = true;
+                        return;
+                    }
+                }
+            } else {
+                // When any other type is checked, uncheck "All Types"
+                if (isChecked) {
+                    const allFilter = document.getElementById('type-all');
+                    if (allFilter.checked) {
+                        allFilter.checked = false;
+                        activeTypeFilters = activeTypeFilters.filter(type => type !== 'all');
+                    }
+                    
+                    // Add to active filters
+                    if (!activeTypeFilters.includes(filterType)) {
+                        activeTypeFilters.push(filterType);
+                    }
+                } else {
+                    // Remove from active filters
+                    activeTypeFilters = activeTypeFilters.filter(type => type !== filterType);
+                    
+                    // If no filters are active, check "All Types"
+                    if (activeTypeFilters.length === 0) {
+                        document.getElementById('type-all').checked = true;
+                        activeTypeFilters = ['all'];
+                    }
+                }
+            }
+            
+            // If we're displaying results, filter them
+            if (!resultsContainer.classList.contains('hidden')) {
+                filterResults();
+            }
+        }
+        
+        // Filter results based on active file type filters
+        function filterResults() {
+            const resultCards = resultsList.querySelectorAll('[data-url]');
+            
+            // Show all if "All Types" is selected
+            if (activeTypeFilters.includes('all')) {
+                resultCards.forEach(card => {
+                    card.style.display = '';
+                });
+                return;
+            }
+            
+            // Otherwise filter by file type
+            resultCards.forEach(card => {
+                const encodedUrl = card.getAttribute('data-url');
+                const url = decodeURIComponent(encodedUrl);
+                const dataItem = urlData.find(item => item.url === url);
+                
+                if (dataItem && activeTypeFilters.includes(dataItem.fileType)) {
+                    card.style.display = '';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+        }
+
+        // Process URLs and automatically download
+        processBtn.addEventListener('click', async () => {
+            // Determine which input method is active
+            const activeTab = document.querySelector('.tab-btn[aria-selected="true"]').getAttribute('aria-controls');
+            
+            let urls = [];
+            
+            if (activeTab === 'panel-text') {
+                urls = urlInput.value.trim().split('\n')
+                    .map(url => url.trim())
+                    .filter(url => url !== '');
+            } else if (activeTab === 'panel-file') {
+                // URLs should already be in the urlInput from file processing
+                urls = urlInput.value.trim().split('\n')
+                    .map(url => url.trim())
+                    .filter(url => url !== '');
+            } else if (activeTab === 'panel-prefix') {
+                // Trigger the combine button click event
+                combineBtn.click();
+                
+                // Wait a bit for the combine operation to complete
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                urls = urlInput.value.trim().split('\n')
+                    .map(url => url.trim())
+                    .filter(url => url !== '');
+            }
+            
+            if (urls.length === 0) {
+                showToast('Please enter at least one URL', 'error');
+                return;
+            }
+            
+            // Update button state to show processing
+            processBtn.disabled = true;
+            processBtn.innerHTML = `
+                <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Processing...
+            `;
+            
+            // Check for URLs that may be incorrectly formatted
+            const fixedUrls = [];
+            const skippedLines = [];
+            
+            urls.forEach((url, index) => {
+                if (isValidUrl(url)) {
+                    fixedUrls.push(url);
+                } else {
+                    // Try to fix common issues
+                    if (url.startsWith('www.')) {
+                        const fixedUrl = 'https://' + url;
+                        if (isValidUrl(fixedUrl)) {
+                            fixedUrls.push(fixedUrl);
+                            return;
+                        }
+                    }
+                    
+                    // Can't fix it
+                    skippedLines.push({ index: index + 1, url });
+                }
+            });
+            
+            // Notify if there were skipped URLs
+            if (skippedLines.length > 0) {
+                const skippedMessage = `Skipped ${skippedLines.length} invalid URL${skippedLines.length > 1 ? 's' : ''} at line${skippedLines.length > 1 ? 's' : ''}: ${skippedLines.map(s => s.index).join(', ')}`;
+                showToast(skippedMessage, 'warning');
+            }
+            
+            if (fixedUrls.length === 0) {
+                showToast('No valid URLs to process', 'error');
+                // Reset button
+                processBtn.disabled = false;
+                processBtn.textContent = 'Process URLs';
+                return;
+            }
+            
+            urls = fixedUrls;
+
+            // Reset stats, URLs and UI
+            stats = { total: urls.length, processed: 0, success: 0, error: 0, pending: 0 };
+            validUrls = [];
+            failedUrls = [];
+            urlData = [];
+            downloadAllBtn.disabled = true;
+            retryFailedBtn.classList.add('hidden');
+            updateStatsDisplay();
+            resultsList.innerHTML = '';
+            statusContainer.classList.remove('hidden');
+            resultsContainer.classList.remove('hidden');
+            downloadControls.classList.remove('hidden');
+
+            // Process each URL
+            const promises = urls.map(url => processUrl(url));
+            
+            // Update maximum concurrent downloads
+            maxConcurrentDownloads = parseInt(concurrentLimit.value) || 3;
+            
+            // Wait for all URLs to be processed
+            await Promise.allSettled(promises);
+            
+            // Enable download button if we have valid URLs
+            if (validUrls.length > 0) {
+                downloadAllBtn.disabled = false;
+                
+                // Automatically start downloading all valid URLs
+                showToast(`Starting downloads for ${validUrls.length} files...`, 'info');
+                downloadQueue = [...validUrls];
+                
+                if (!isDownloading) {
+                    isDownloading = true;
+                    processNextDownloads();
+                }
+            }
+            
+            // Show retry button if we have failed URLs
+            if (failedUrls.length > 0) {
+                retryFailedBtn.classList.remove('hidden');
+            }
+            
+            // Reset button
+            processBtn.disabled = false;
+            processBtn.textContent = 'Process URLs';
+        });
+
+        // Clear everything
+        clearBtn.addEventListener('click', () => {
+            urlInput.value = '';
+            resultsList.innerHTML = '';
+            stats = { total: 0, processed: 0, success: 0, error: 0, pending: 0 };
+            validUrls = [];
+            failedUrls = [];
+            urlData = [];
+            statusContainer.classList.add('hidden');
+            resultsContainer.classList.add('hidden');
+            downloadControls.classList.add('hidden');
+            retryFailedBtn.classList.add('hidden');
+            
+            // Clear the download queue
+            downloadQueue = [];
+            isDownloading = false;
+            concurrentDownloads = 0;
+        });
+        
+        // Copy all URLs
+        copyAllURLs.addEventListener('click', () => {
+            const allUrls = urlData.map(item => item.url).join('\n');
+            navigator.clipboard.writeText(allUrls)
+                .then(() => showToast('All URLs copied to clipboard', 'success'))
+                .catch(() => showToast('Failed to copy URLs', 'error'));
+        });
+        
+        // Retry failed URLs
+        retryFailedBtn.addEventListener('click', async () => {
+            if (failedUrls.length === 0) return;
+            
+            const urlsToRetry = [...failedUrls];
+            failedUrls = [];
+            
+            // Update stats
+            stats.total += urlsToRetry.length;
+            stats.pending += urlsToRetry.length;
+            updateStatsDisplay();
+            
+            // Process each failed URL again
+            const promises = urlsToRetry.map(url => processUrl(url));
+            await Promise.allSettled(promises);
+            
+            // Update buttons
+            if (validUrls.length > 0) {
+                downloadAllBtn.disabled = false;
+            }
+            
+            if (failedUrls.length > 0) {
+                retryFailedBtn.classList.remove('hidden');
+            } else {
+                retryFailedBtn.classList.add('hidden');
+            }
+        });
+        
+        // Download all files
+        downloadAllBtn.addEventListener('click', () => {
+            if (validUrls.length === 0) return;
+            
+            // Reset the download queue and start downloads
+            downloadQueue = [...validUrls];
+            maxConcurrentDownloads = parseInt(concurrentLimit.value) || 3;
+            
+            const delayValue = parseInt(downloadDelay.value) || 500;
+            
+            // Show a toast with estimated time
+            const estimatedTime = Math.ceil((delayValue * downloadQueue.length) / maxConcurrentDownloads / 1000);
+            showToast(`Starting downloads. Estimated time: ${estimatedTime} seconds`, 'info');
+            
+            // Start the download process if not already running
+            if (!isDownloading) {
+                isDownloading = true;
+                concurrentDownloads = 0;
+                processNextDownloads();
+            }
+        });
+        
+        // Process next downloads in queue (concurrent)
+        function processNextDownloads() {
+            if (downloadQueue.length === 0) {
+                // If there are active downloads, wait for them to complete
+                if (concurrentDownloads > 0) {
+                    return;
+                }
+                
+                isDownloading = false;
+                showToast('All downloads complete!', 'success');
+                return;
+            }
+            
+            // Process up to max concurrent downloads
+            while (concurrentDownloads < maxConcurrentDownloads && downloadQueue.length > 0) {
+                const url = downloadQueue.shift();
+                downloadFile(url);
+                concurrentDownloads++;
+            }
+        }
+        
+        // Download a single file
+        function downloadFile(url) {
+            const urlInfo = urlData.find(item => item.url === url);
+            
+            if (!urlInfo) {
+                // Skip and continue if URL data not found
+                concurrentDownloads--;
+                setTimeout(processNextDownloads, 10);
+                return;
+            }
+            
+            const filename = urlInfo.filename;
+            
+            // Update status in UI
+            const statusElement = document.querySelector(`[data-url="${encodeURIComponent(url)}"] .status`);
+            if (statusElement) {
+                statusElement.innerHTML = `<span class="text-blue-500 dark:text-blue-400 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Downloading...
+                </span>`;
+            }
+            
+            // Use download attribute for direct download
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            
+            try {
+                link.click();
+                
+                // Update status after click
+                if (statusElement) {
+                    setTimeout(() => {
+                        statusElement.innerHTML = `<span class="text-green-600 dark:text-green-400 flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                            </svg>
+                            Downloaded
+                        </span>`;
+                    }, 300);
+                }
+            } catch (e) {
+                console.error('Download error:', e);
+                if (statusElement) {
+                    statusElement.innerHTML = `<span class="text-red-600 dark:text-red-400 flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                        Download failed
+                    </span>`;
+                }
+            }
+            
+            // Clean up
+            setTimeout(() => {
+                document.body.removeChild(link);
+                
+                // Decrement active downloads counter
+                concurrentDownloads--;
+                
+                // Continue with next downloads after the specified delay
+                setTimeout(() => {
+                    processNextDownloads();
+                }, parseInt(downloadDelay.value) || 500);
+            }, 100);
+        }
+
+        // Process a single URL
+        async function processUrl(url) {
+            // Create result card
+            const resultCard = document.createElement('div');
+            resultCard.className = 'bg-white dark:bg-gray-800 rounded-lg shadow-sm p-3 border border-gray-200 dark:border-gray-700 flex flex-wrap items-center justify-between';
+            resultCard.setAttribute('data-url', encodeURIComponent(url));
+            
+            const urlDisplay = document.createElement('div');
+            urlDisplay.className = 'text-sm font-medium break-all flex-1 mr-3';
+            urlDisplay.textContent = url;
+            
+            const statusElement = document.createElement('div');
+            statusElement.className = 'flex items-center text-sm shrink-0 status';
+            statusElement.innerHTML = `
+                <div class="mr-2 h-4 w-4 rounded-full border-2 border-primary border-t-transparent loader"></div>
+                <span>Validating...</span>
+            `;
+            
+            resultCard.appendChild(urlDisplay);
+            resultCard.appendChild(statusElement);
+            resultsList.appendChild(resultCard);
+            
+            // Update pending count
+            stats.pending++;
+            updateStatsDisplay();
+
+            try {
+                // Validate URL
+                if (!isValidUrl(url)) {
+                    throw new Error('Invalid URL format');
+                }
+                
+                // Get filename from URL
+                let filename = getFilenameFromUrl(url);
+                
+                // Clean up filename if needed
+                if (fixFilenames.checked) {
+                    filename = sanitizeFilename(filename);
+                }
+                
+                // Detect file type
+                let fileType = 'unknown';
+                let contentType = '';
+                
+                // Make HEAD request to validate URL and get content type
+                if (validateContent.checked) {
+                    try {
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+                        
+                        const response = await fetch(url, {
+                            method: 'HEAD',
+                            signal: controller.signal,
+                            mode: 'no-cors' // This helps with CORS issues but limits what info we can get
+                        });
+                        
+                        clearTimeout(timeoutId);
+                        
+                        if (response.ok) {
+                            contentType = response.headers.get('content-type') || '';
+                            fileType = detectFileType(url, contentType);
+                        } else {
+                            throw new Error(`Server returned ${response.status}`);
+                        }
+                    } catch (error) {
+                        // If HEAD fails, still continue but log the error
+                        console.log(`HEAD request failed for ${url}:`, error.message);
+                        
+                        // Use extension-based detection as fallback
+                        fileType = detectFileType(url);
+                    }
+                } else {
+                    // Just use extension-based detection
+                    fileType = detectFileType(url);
+                }
+                
+                // Add URL data
+                const urlInfo = {
+                    url,
+                    filename,
+                    contentType,
+                    fileType,
+                    status: 'valid',
+                    timestamp: Date.now()
+                };
+                
+                urlData.push(urlInfo);
+                
+                // Add to valid URLs list
+                validUrls.push(url);
+
+                // Create media preview if enabled
+                let previewElement = null;
+                
+                if (previewMedia.checked && (fileType === 'image' || fileType === 'video' || fileType === 'audio')) {
+                    previewElement = document.createElement('div');
+                    previewElement.className = 'preview-container ml-2';
+                    
+                    // Add preview trigger
+                    const previewTrigger = document.createElement('button');
+                    previewTrigger.className = 'preview-trigger text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300';
+                    previewTrigger.innerHTML = `
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
+                            <path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd" />
+                        </svg>
+                    `;
+                    
+                    // Create preview content
+                    const preview = document.createElement('div');
+                    preview.className = 'media-preview';
+                    
+                    if (fileType === 'image') {
+                        preview.innerHTML = `
+                            <img src="${url}" alt="${filename}" class="max-w-full max-h-full" onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2NjYyI+PHBhdGggZD0iTTUgM2gxNGMxLjEgMCAyIC45IDIgMnYxNGMwIDEuMS0uOSAyLTIgMkg1Yy0xLjEgMC0yLS45LTItMlY1YzAtMS4xLjktMiAyLTJ6bTAgMnYxNGgxNFY1SDV6bTQgMmgydjJIOXptNCAwaDJ2Mkg5em00IDBoMnYySDE3ek05IDloMnYySDF6bTQgMGgydjJIMXptNCAwaDJ2MkgxN3oiLz48L3N2Zz4='; this.alt='Preview not available';" />
+                        `;
+                    } else if (fileType === 'video') {
+                        preview.innerHTML = `<div class="p-2 text-sm text-center text-gray-600 dark:text-gray-400">Video preview available on hover</div>`;
+                    } else if (fileType === 'audio') {
+                        preview.innerHTML = `<div class="p-2 text-sm text-center text-gray-600 dark:text-gray-400">Audio preview available on hover</div>`;
+                    }
+                    
+                    previewElement.appendChild(previewTrigger);
+                    previewElement.appendChild(preview);
+                }
+
+                // Create individual download button
+                const downloadButton = document.createElement('button');
+                downloadButton.className = 'ml-2 px-3 py-1 bg-primary text-white text-sm rounded hover:bg-opacity-90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-opacity-50 transition-colors';
+                downloadButton.textContent = 'Download';
+                downloadButton.onclick = () => {
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    
+                    try {
+                        link.click();
+                        statusElement.innerHTML = `<span class="text-green-600 dark:text-green-400 flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                            </svg>
+                            Downloaded
+                        </span>`;
+                        setTimeout(() => {
+                            statusElement.innerHTML = `<span class="text-green-600 dark:text-green-400 flex items-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                                </svg>
+                                Valid
+                            </span>`;
+                            const actionContainer = document.createElement('div');
+                            actionContainer.className = 'flex items-center';
+                            actionContainer.appendChild(downloadButton);
+                            if (previewElement) {
+                                actionContainer.appendChild(previewElement);
+                            }
+                            statusElement.appendChild(actionContainer);
+                        }, 2000);
+                    } catch (e) {
+                        console.error('Download error:', e);
+                        statusElement.innerHTML = `<span class="text-red-600 dark:text-red-400 flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                            Download failed
+                        </span>`;
+                        setTimeout(() => {
+                            statusElement.innerHTML = `<span class="text-green-600 dark:text-green-400 flex items-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                                </svg>
+                                Valid
+                            </span>`;
+                            const actionContainer = document.createElement('div');
+                            actionContainer.className = 'flex items-center';
+                            actionContainer.appendChild(downloadButton);
+                            if (previewElement) {
+                                actionContainer.appendChild(previewElement);
+                            }
+                            statusElement.appendChild(actionContainer);
+                        }, 2000);
+                    }
+                    
+                    setTimeout(() => document.body.removeChild(link), 100);
+                };
+
+                statusElement.innerHTML = `<span class="text-green-600 dark:text-green-400 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                    Valid
+                </span>`;
+                
+                // Add file type badge if available
+                if (fileType !== 'unknown') {
+                    const fileTypeBadge = document.createElement('span');
+                    fileTypeBadge.className = 'text-xs px-2 py-1 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 mr-2';
+                    fileTypeBadge.textContent = fileType;
+                    resultCard.insertBefore(fileTypeBadge, statusElement);
+                    
+                    // Add data-type attribute for filtering
+                    resultCard.setAttribute('data-type', fileType);
+                }
+                
+                const actionContainer = document.createElement('div');
+                actionContainer.className = 'flex items-center';
+                actionContainer.appendChild(downloadButton);
+                if (previewElement) {
+                    actionContainer.appendChild(previewElement);
+                }
+                statusElement.appendChild(actionContainer);
+                
+                stats.success++;
+                stats.pending--;
+            } catch (error) {
+                statusElement.innerHTML = `<span class="text-red-600 dark:text-red-400 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    Error: ${error.message}
+                </span>`;
+                
+                // Add to failed URLs list
+                failedUrls.push(url);
+                
+                // Add URL data
+                urlData.push({
+                    url,
+                    status: 'error',
+                    error: error.message,
+                    fileType: 'unknown',
+                    timestamp: Date.now()
+                });
+                
+                stats.error++;
+                stats.pending--;
+            } finally {
+                stats.processed++;
+                updateStatsDisplay();
+                
+                // Apply any active filters
+                if (activeTypeFilters.length > 0 && !activeTypeFilters.includes('all')) {
+                    filterResults();
+                }
+            }
+        }
+
+        // Update the stats display
+        function updateStatsDisplay() {
+            processedCount.textContent = stats.processed;
+            totalCount.textContent = stats.total;
+            successCount.textContent = stats.success;
+            errorCount.textContent = stats.error;
+            pendingCount.textContent = stats.pending;
+            
+            const percentage = (stats.processed / stats.total) * 100;
+            progressBar.style.width = `${percentage}%`;
+        }
+
+        // Validate URL format
+        function isValidUrl(string) {
+            try {
+                const url = new URL(string);
+                return url.protocol === 'http:' || url.protocol === 'https:';
+            } catch (_) {
+                return false;
+            }
+        }
+        
+        // Extract filename from URL
+        function getFilenameFromUrl(url) {
+            try {
+                const urlObj = new URL(url);
+                const pathname = urlObj.pathname;
+                const segments = pathname.split('/');
+                let lastSegment = segments[segments.length - 1];
+                
+                // If the URL ends with a trailing slash or is just a domain
+                if (!lastSegment || lastSegment === '') {
+                    return generateDefaultFilename(urlObj.hostname);
+                }
+                
+                // Handle query parameters
+                if (lastSegment.includes('?')) {
+                    lastSegment = lastSegment.split('?')[0];
+                }
+                
+                // Handle hash fragments
+                if (lastSegment.includes('#')) {
+                    lastSegment = lastSegment.split('#')[0];
+                }
+                
+                // Decode URI component to handle special characters in filenames
+                try {
+                    lastSegment = decodeURIComponent(lastSegment);
+                } catch (e) {
+                    // If decoding fails, use as is
+                }
+                
+                // Check if filename is empty after processing
+                if (!lastSegment || lastSegment === '') {
+                    return generateDefaultFilename(urlObj.hostname);
+                }
+                
+                return lastSegment;
+            } catch (e) {
+                return generateDefaultFilename();
+            }
+        }
+        
+        // Generate a default filename
+        function generateDefaultFilename(hostname = '') {
+            const date = new Date();
+            const timestamp = date.toISOString().replace(/[:T.-]/g, '').slice(0, 14);
+            
+            if (hostname) {
+                // Clean up hostname (remove www. and domain extension)
+                hostname = hostname.replace(/^www\./, '').split('.')[0];
+                return `${hostname}-${timestamp}`;
+            }
+            
+            return `file-${timestamp}`;
+        }
+        
+        // Sanitize filename (remove invalid characters)
+        function sanitizeFilename(filename) {
+            // Replace invalid filename characters
+            return filename
+                .replace(/[/\\?%*:|"<>]/g, '-') // Replace invalid chars with hyphens
+                .replace(/\s+/g, '_')           // Replace spaces with underscores
+                .replace(/_{2,}/g, '_')         // Replace multiple underscores with one
+                .replace(/-{2,}/g, '-')         // Replace multiple hyphens with one
+                .replace(/^[.-]+|[.-]+$/g, '')  // Remove leading/trailing dots and hyphens
+                .trim();
+        }
+
+        // Keyboard navigation support
+        document.addEventListener('keydown', (e) => {
+            // Process URLs with Ctrl+Enter
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !processBtn.disabled) {
+                processBtn.click();
+            }
+            
+            // Clear with Escape key
+            if (e.key === 'Escape' && !clearBtn.disabled) {
+                clearBtn.click();
+            }
+        });
+    </script>
+</body>
+</html>
