@@ -6,7 +6,6 @@
 
 A robust, client-side bulk file downloader that processes multiple URLs and downloads them with concurrency control, validation, and filtering — all in a single HTML file with zero build steps.
 
-![Screenshot](https://via.placeholder.com/800x400/5D5CDE/FFFFFF?text=Bulk+URL+Downloader)
 
 ## Features
 
