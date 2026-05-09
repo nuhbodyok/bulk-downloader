@@ -1,5 +1,7 @@
 # Bulk URL Downloader
 
+**[→ Live Demo](https://nuhbodyok.github.io/bulk-downloader/)**
+
 [![HTML5](https://img.shields.io/badge/HTML5-E34F26?logo=html5&logoColor=white)]()
 [![JavaScript](https://img.shields.io/badge/JavaScript-ES6+-F7DF1E?logo=javascript&logoColor=black)]()
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-06B6D4?logo=tailwindcss&logoColor=white)]()
